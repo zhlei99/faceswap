@@ -6,17 +6,25 @@ here. Further optional tabs will also be displayed depending on the currently ex
 task. """
 
 import logging
+import gettext
 import tkinter as tk
 from tkinter import ttk
+
+from lib.logger import parse_class_init
+from lib.utils import get_module_objects
 
 from .display_analysis import Analysis
 from .display_command import GraphDisplay, PreviewExtract, PreviewTrain
 from .utils import get_config
 
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)
+
+# LOCALES
+_LANG = gettext.translation("gui.tooltips", localedir="locales", fallback=True)
+_ = _LANG.gettext
 
 
-class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
+class DisplayNotebook(ttk.Notebook):  # pylint:disable=too-many-ancestors
     """ The tkinter Notebook that holds the display items.
 
     Parameters
@@ -26,12 +34,12 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
     """
 
     def __init__(self, parent):
-        logger.debug("Initializing %s", self.__class__.__name__)
+        logger.debug(parse_class_init(locals()))
         super().__init__(parent)
         parent.add(self)
         tk_vars = get_config().tk_vars
-        self._wrapper_var = tk_vars["display"]
-        self._runningtask = tk_vars["runningtask"]
+        self._wrapper_var = tk_vars.display
+        self._running_task = tk_vars.running_task
 
         self._set_wrapper_var_trace()
         self._add_static_tabs()
@@ -41,10 +49,10 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
         logger.debug("Initialized %s", self.__class__.__name__)
 
     @property
-    def runningtask(self):
+    def running_task(self):
         """ :class:`tkinter.BooleanVar`: The global tkinter variable that indicates whether a
         Faceswap task is currently running or not. """
-        return self._runningtask
+        return self._running_task
 
     def _set_wrapper_var_trace(self):
         """ Sets the trigger to update the displayed notebook's pages when the global tkinter
@@ -63,7 +71,7 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
                 continue    # Not yet implemented
             if tab == "analysis":
                 helptext = {"stats":
-                            "Summary statistics for each training session"}
+                            _("Summary statistics for each training session")}
                 frame = Analysis(self, tab, helptext)
             else:
                 frame = self._add_frame()
@@ -90,7 +98,7 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
         command: str
             The Faceswap command that is being executed
         """
-        build_tabs = getattr(self, "_{}_tabs".format(command))
+        build_tabs = getattr(self, f"_{command}_tabs")
         build_tabs()
 
     def _extract_tabs(self, command="extract"):
@@ -105,8 +113,7 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
 
         """
         logger.debug("Build extract tabs")
-        helptext = ("Updates preview from output every 5 "
-                    "seconds to limit disk contention")
+        helptext = _("Preview updates every 5 seconds")
         PreviewExtract(self, "preview", helptext, 5000, command)
         logger.debug("Built extract tabs")
 
@@ -115,10 +122,10 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
         logger.debug("Build train tabs")
         for tab in ("graph", "preview"):
             if tab == "graph":
-                helptext = "Graph showing Loss vs Iterations"
+                helptext = _("Graph showing Loss vs Iterations")
                 GraphDisplay(self, "graph", helptext, 5000)
             elif tab == "preview":
-                helptext = "Training preview. Updated on every save iteration"
+                helptext = _("Training preview. Updated on every save iteration")
                 PreviewTrain(self, "preview", helptext, 1000)
         logger.debug("Built train tabs")
 
@@ -140,11 +147,13 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
                 continue
             logger.debug("removing child: %s", child)
             child_name = child.split(".")[-1]
-            child_object = self.children[child_name]  # returns the OptionalDisplayPage object
+            child_object = self.children.get(child_name)  # returns the OptionalDisplayPage object
+            if not child_object:
+                continue
             child_object.close()  # Call the OptionalDisplayPage close() method
             self.forget(child)
 
-    def _update_displaybook(self, *args):  # pylint: disable=unused-argument
+    def _update_displaybook(self, *args):  # pylint:disable=unused-argument
         """ Callback to be executed when the global tkinter variable `display`
         (:attr:`wrapper_var`) is updated when a Faceswap task is executed.
 
@@ -181,3 +190,6 @@ class DisplayNotebook(ttk.Notebook):  # pylint: disable=too-many-ancestors
         else:
             logger.debug("Object does not have on_tab_select method. Returning: '%s'",
                          selected_object)
+
+
+__all__ = get_module_objects(__name__)

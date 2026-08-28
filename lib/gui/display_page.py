@@ -1,26 +1,31 @@
 #!/usr/bin python3
 """ Display Page parent classes for display section of the Faceswap GUI """
 
+import gettext
 import logging
 import tkinter as tk
 from tkinter import ttk
 
+from lib.utils import get_module_objects
+
 from .custom_widgets import Tooltip
 from .utils import get_images
 
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)
+
+# LOCALES
+_LANG = gettext.translation("gui.tooltips", localedir="locales", fallback=True)
+_ = _LANG.gettext
 
 
-class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
+class DisplayPage(ttk.Frame):  # pylint:disable=too-many-ancestors
     """ Parent frame holder for each tab.
         Defines uniform structure for each tab to inherit from """
     def __init__(self, parent, tab_name, helptext):
-        logger.debug("Initializing %s: (tab_name: '%s', helptext: %s)",
-                     self.__class__.__name__, tab_name, helptext)
-        ttk.Frame.__init__(self, parent)
+        super().__init__(parent)
 
         self._parent = parent
-        self.runningtask = parent.runningtask
+        self.running_task = parent.running_task
         self.helptext = helptext
         self.tabname = tab_name
 
@@ -37,8 +42,6 @@ class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
         self.pack(fill=tk.BOTH, side=tk.TOP, anchor=tk.NW)
         parent.add(self, text=self.tabname.title())
 
-        logger.debug("Initialized %s", self.__class__.__name__,)
-
     @property
     def _tab_is_active(self):
         """ bool: ``True`` if the tab currently has focus otherwise ``False`` """
@@ -51,12 +54,11 @@ class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
                 logger.debug("Adding: (%s: %s)", key, val)
                 self.vars[key] = val
 
-    @staticmethod
-    def set_vars():
+    def set_vars(self):
         """ Override to return a dict of page specific variables """
-        return dict()
+        return {}
 
-    def on_tab_select(self):  # pylint:disable=no-self-use
+    def on_tab_select(self):
         """ Override for specific actions when the current tab is selected """
         logger.debug("Returning as 'on_tab_select' not implemented for %s",
                      self.__class__.__name__)
@@ -90,7 +92,7 @@ class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
 
     def add_frame_separator(self):
         """ Add a separator between top and bottom frames """
-        logger.debug("Adding frame seperator")
+        logger.debug("Adding frame separator")
         sep = ttk.Frame(self, height=2, relief=tk.RIDGE)
         sep.pack(fill=tk.X, pady=(5, 0), side=tk.BOTTOM)
 
@@ -141,12 +143,11 @@ class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
             subnotebook frame """
         logger.debug("Getting subnotebook widgets")
         for child in self.subnotebook.winfo_children():
-            for widget in child.winfo_children():
-                yield widget
+            yield from child.winfo_children()
 
     def subnotebook_get_titles_ids(self):
         """ Return tabs ids and titles """
-        tabs = dict()
+        tabs = {}
         for tab_id in range(0, self.subnotebook.index("end")):
             tabs[self.subnotebook.tab(tab_id, "text")] = tab_id
         logger.debug(tabs)
@@ -159,15 +160,13 @@ class DisplayPage(ttk.Frame):  # pylint: disable=too-many-ancestors
         return self.subnotebook.children[tab_name]
 
 
-class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
+class DisplayOptionalPage(DisplayPage):  # pylint:disable=too-many-ancestors
     """ Parent Context Sensitive Display Tab """
 
-    def __init__(self, parent, tab_name, helptext, waittime, command=None):
-        logger.debug("%s: OptionalPage args: (waittime: %s, command: %s)",
-                     self.__class__.__name__, waittime, command)
-        DisplayPage.__init__(self, parent, tab_name, helptext)
+    def __init__(self, parent, tab_name, helptext, wait_time, command=None):
+        super().__init__(parent, tab_name, helptext)
 
-        self._waittime = waittime
+        self._waittime = wait_time
         self.command = command
         self.display_item = None
 
@@ -178,8 +177,7 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
         self.update_idletasks()
         self._update_page()
 
-    @staticmethod
-    def set_vars():
+    def set_vars(self):
         """ Analysis specific vars """
         enabled = tk.BooleanVar()
         enabled.set(True)
@@ -187,12 +185,8 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
         ready = tk.BooleanVar()
         ready.set(False)
 
-        modified = tk.DoubleVar()
-        modified.set(None)
-
         tk_vars = {"enabled": enabled,
-                   "ready": ready,
-                   "modified": modified}
+                   "ready": ready}
         logger.debug(tk_vars)
         return tk_vars
 
@@ -208,11 +202,11 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
     def set_info_text(self):
         """ Set waiting for display text """
         if not self.vars["enabled"].get():
-            msg = "{} disabled".format(self.tabname.title())
+            msg = f"{self.tabname.title()} disabled"
         elif self.vars["enabled"].get() and not self.vars["ready"].get():
-            msg = "Waiting for {}...".format(self.tabname)
+            msg = f"Waiting for {self.tabname}..."
         else:
-            msg = "Displaying {}".format(self.tabname)
+            msg = f"Displaying {self.tabname}"
         logger.debug(msg)
         self.set_info(msg)
 
@@ -230,20 +224,20 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
                              command=self.save_items)
         btnsave.pack(padx=2, side=tk.RIGHT)
         Tooltip(btnsave,
-                text="Save {}(s) to file".format(self.tabname),
-                wraplength=200)
+                text=_(f"Save {self.tabname}(s) to file"),
+                wrap_length=200)
 
     def add_option_enable(self):
         """ Add check-button to enable/disable page """
         logger.debug("Adding enable option")
         chkenable = ttk.Checkbutton(self.optsframe,
                                     variable=self.vars["enabled"],
-                                    text="Enable {}".format(self.tabname),
+                                    text=f"Enable {self.tabname}",
                                     command=self.on_chkenable_change)
         chkenable.pack(side=tk.RIGHT, padx=5, anchor=tk.W)
         Tooltip(chkenable,
-                text="Enable or disable {} display".format(self.tabname),
-                wraplength=200)
+                text=_(f"Enable or disable {self.tabname} display"),
+                wrap_length=200)
 
     def save_items(self):
         """ Save items. Override for display specific saving """
@@ -260,7 +254,7 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
 
     def _update_page(self):
         """ Update the latest preview item """
-        if not self.runningtask.get() or not self._tab_is_active:
+        if not self.running_task.get() or not self._tab_is_active:
             return
         if self.vars["enabled"].get():
             logger.trace("Updating page: %s", self.__class__.__name__)
@@ -292,3 +286,6 @@ class DisplayOptionalPage(DisplayPage):  # pylint: disable=too-many-ancestors
         for child in self.winfo_children():
             logger.debug("Destroying child: %s", child)
             child.destroy()
+
+
+__all__ = get_module_objects(__name__)

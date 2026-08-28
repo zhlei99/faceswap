@@ -5,10 +5,15 @@ Based on the original https://www.reddit.com/r/deepfakes/ code sample + contribu
 This model is heavily documented as it acts as a template that other model plugins can be developed
 from.
 """
-from keras.layers import Dense, Flatten, Reshape, Input
+
+from keras import Input, layers, Model as KModel
 
 from lib.model.nn_blocks import Conv2DOutput, Conv2DBlock, UpscaleBlock
-from ._base import KerasModel, ModelBase
+from lib.utils import get_module_objects
+from plugins.train.train_config import Loss as cfg_loss
+from ._base import ModelBase
+from . import original_defaults as cfg
+# pylint:disable=duplicate-code
 
 
 class Model(ModelBase):
@@ -40,8 +45,8 @@ class Model(ModelBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.input_shape = (64, 64, 3)
-        self.low_mem = self.config.get("lowmem", False)
-        self.learn_mask = self.config["learn_mask"]
+        self.low_mem = cfg.lowmem()
+        self.learn_mask = cfg_loss.learn_mask()
         self.encoder_dim = 512 if self.low_mem else 1024
 
     def build_model(self, inputs):
@@ -60,12 +65,6 @@ class Model(ModelBase):
         2 Decoders are then defined (one for each side) with the encoder instances passed in as
         input to the corresponding decoders.
 
-        It is important to note that any models and sub-models should not call
-        :class:`keras.models.Model` directly, but rather call
-        :class:`plugins.train.model._base.KerasModel`. This acts as a wrapper for Keras' Model
-        class, but handles some minor differences which need to be handled between Nvidia and AMD
-        backends.
-
         The final output of the model should always call :class:`lib.model.nn_blocks.Conv2DOutput`
         so that the correct data type is set for the final activation, to support Mixed Precision
         Training. Failure to do so is likely to lead to issues when Mixed Precision is enabled.
@@ -79,8 +78,7 @@ class Model(ModelBase):
         Returns
         -------
         :class:`keras.models.Model`
-            The output of this function must be a keras model generated from
-            :class:`plugins.train.model._base.KerasModel`. See Keras documentation for the correct
+            See Keras documentation for the correct
             structure, but note that parameter :attr:`name` is a required rather than an optional
             argument in Faceswap. You should assign this to the attribute ``self.name`` that is
             automatically generated from the plugin's filename.
@@ -89,12 +87,12 @@ class Model(ModelBase):
         input_b = inputs[1]
 
         encoder = self.encoder()
-        encoder_a = [encoder(input_a)]
-        encoder_b = [encoder(input_b)]
+        encoder_a = encoder(input_a)
+        encoder_b = encoder(input_b)
 
-        outputs = [self.decoder("a")(encoder_a), self.decoder("b")(encoder_b)]
+        outputs = self.decoder("a")(encoder_a) + self.decoder("b")(encoder_b)
 
-        autoencoder = KerasModel(inputs, outputs, name=self.name)
+        autoencoder = KModel(inputs, outputs, name=self.model_name)
         return autoencoder
 
     def encoder(self):
@@ -112,16 +110,16 @@ class Model(ModelBase):
         """
         input_ = Input(shape=self.input_shape)
         var_x = input_
-        var_x = Conv2DBlock(128)(var_x)
-        var_x = Conv2DBlock(256)(var_x)
-        var_x = Conv2DBlock(512)(var_x)
+        var_x = Conv2DBlock(128, activation="leakyrelu")(var_x)
+        var_x = Conv2DBlock(256, activation="leakyrelu")(var_x)
+        var_x = Conv2DBlock(512, activation="leakyrelu")(var_x)
         if not self.low_mem:
-            var_x = Conv2DBlock(1024)(var_x)
-        var_x = Dense(self.encoder_dim)(Flatten()(var_x))
-        var_x = Dense(4 * 4 * 1024)(var_x)
-        var_x = Reshape((4, 4, 1024))(var_x)
-        var_x = UpscaleBlock(512)(var_x)
-        return KerasModel(input_, var_x, name="encoder")
+            var_x = Conv2DBlock(1024, activation="leakyrelu")(var_x)
+        var_x = layers.Dense(self.encoder_dim)(layers.Flatten()(var_x))
+        var_x = layers.Dense(4 * 4 * 1024)(var_x)
+        var_x = layers.Reshape((4, 4, 1024))(var_x)
+        var_x = UpscaleBlock(512, activation="leakyrelu")(var_x)
+        return KModel(input_, var_x, name="encoder")
 
     def decoder(self, side):
         """ The original Faceswap Decoder Network.
@@ -141,23 +139,20 @@ class Model(ModelBase):
         """
         input_ = Input(shape=(8, 8, 512))
         var_x = input_
-        var_x = UpscaleBlock(256)(var_x)
-        var_x = UpscaleBlock(128)(var_x)
-        var_x = UpscaleBlock(64)(var_x)
-        var_x = Conv2DOutput(3, 5, name="face_out_{}".format(side))(var_x)
+        var_x = UpscaleBlock(256, activation="leakyrelu")(var_x)
+        var_x = UpscaleBlock(128, activation="leakyrelu")(var_x)
+        var_x = UpscaleBlock(64, activation="leakyrelu")(var_x)
+        var_x = Conv2DOutput(3, 5, name=f"face_out_{side}")(var_x)
         outputs = [var_x]
 
         if self.learn_mask:
             var_y = input_
-            var_y = UpscaleBlock(256)(var_y)
-            var_y = UpscaleBlock(128)(var_y)
-            var_y = UpscaleBlock(64)(var_y)
-            var_y = Conv2DOutput(1, 5, name="mask_out_{}".format(side))(var_y)
+            var_y = UpscaleBlock(256, activation="leakyrelu")(var_y)
+            var_y = UpscaleBlock(128, activation="leakyrelu")(var_y)
+            var_y = UpscaleBlock(64, activation="leakyrelu")(var_y)
+            var_y = Conv2DOutput(1, 5, name=f"mask_out_{side}")(var_y)
             outputs.append(var_y)
-        return KerasModel(input_, outputs=outputs, name="decoder_{}".format(side))
+        return KModel(input_, outputs=outputs, name=f"decoder_{side}")
 
-    def _legacy_mapping(self):
-        """ The mapping of legacy separate model names to single model names """
-        return {"{}_encoder.h5".format(self.name): "encoder",
-                "{}_decoder_A.h5".format(self.name): "decoder_a",
-                "{}_decoder_B.h5".format(self.name): "decoder_b"}
+
+__all__ = get_module_objects(__name__)
